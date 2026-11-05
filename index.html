@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>血圧パターン読み解きツール</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  *:focus-visible { outline: 2px solid #ef4444; outline-offset: 2px; }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen text-gray-800">
+<div class="max-w-4xl mx-auto px-4 py-8">
+  <header class="text-center mb-6">
+    <h1 class="text-2xl font-bold text-red-600">血圧パターン読み解きツール</h1>
+    <p class="text-sm text-gray-500 mt-1">医療診断ではなく、データ整理・医師相談材料のツールです</p>
+  </header>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+    <!-- 入力フォーム -->
+    <div class="lg:col-span-1">
+      <div class="bg-white rounded-2xl shadow-sm p-5 mb-5">
+        <h2 class="font-semibold text-gray-700 mb-4">測定値を入力</h2>
+        <div class="space-y-3">
+          <div>
+            <label class="text-xs text-gray-500 block mb-1" for="bp-date">日付</label>
+            <input id="bp-date" type="date" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-red-400">
+          </div>
+          <div>
+            <label class="text-xs text-gray-500 block mb-1" for="bp-time">時間帯</label>
+            <select id="bp-time" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-red-400">
+              <option value="morning">朝</option>
+              <option value="noon">昼</option>
+              <option value="evening">晩</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-xs text-gray-500 block mb-1" for="bp-sys">収縮期 (mmHg)</label>
+              <input id="bp-sys" type="number" min="60" max="250" placeholder="120"
+                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-red-400">
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1" for="bp-dia">拡張期 (mmHg)</label>
+              <input id="bp-dia" type="number" min="40" max="150" placeholder="80"
+                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-red-400">
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-gray-500 block mb-1" for="bp-pulse">脈拍 (bpm)</label>
+            <input id="bp-pulse" type="number" min="30" max="200" placeholder="70"
+              class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-red-400">
+          </div>
+          <button onclick="addRecord()"
+            class="w-full bg-red-500 text-white py-2.5 rounded-xl font-medium hover:bg-red-600 transition text-sm">
+            記録を追加
+          </button>
+          <div id="add-msg" class="text-center text-xs text-green-600 hidden">✓ 追加しました</div>
+        </div>
+      </div>
+
+      <!-- 統計サマリー -->
+      <div class="bg-white rounded-2xl shadow-sm p-5">
+        <h2 class="font-semibold text-gray-700 mb-3">統計サマリー</h2>
+        <div id="stats-panel" class="text-sm text-gray-400 text-center py-4">データなし</div>
+      </div>
+    </div>
+
+    <!-- グラフ・分析 -->
+    <div class="lg:col-span-2 space-y-5">
+      <div class="bg-white rounded-2xl shadow-sm p-5">
+        <div class="flex items-center gap-4 mb-3 text-xs flex-wrap">
+          <span class="flex items-center gap-1"><span class="inline-block w-3 h-1 bg-red-500 rounded"></span>収縮期</span>
+          <span class="flex items-center gap-1"><span class="inline-block w-3 h-1 bg-blue-400 rounded"></span>拡張期</span>
+        </div>
+        <canvas id="bp-chart" width="560" height="260" role="img" aria-label="血圧推移グラフ"></canvas>
+        <!-- WHO分類凡例 -->
+        <div class="flex gap-3 mt-3 flex-wrap text-xs">
+          <span class="flex items-center gap-1"><span class="inline-block w-4 h-3 rounded" style="background:#dcfce7"></span>正常</span>
+          <span class="flex items-center gap-1"><span class="inline-block w-4 h-3 rounded" style="background:#fef9c3"></span>高め</span>
+          <span class="flex items-center gap-1"><span class="inline-block w-4 h-3 rounded" style="background:#fee2e2"></span>高血圧I度</span>
+          <span class="flex items-center gap-1"><span class="inline-block w-4 h-3 rounded" style="background:#fecaca"></span>高血圧II度</span>
+        </div>
+      </div>
+
+      <!-- パターン警告 -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="bg-white rounded-2xl shadow-sm p-4">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">白衣高血圧とは</h3>
+          <p class="text-xs text-gray-500 leading-relaxed">
+            病院での測定値は高いが、家庭での測定値は正常範囲内のパターン。
+            緊張や白衣による一時的な血圧上昇が原因とされる。
+            家庭と病院での測定値を比較して医師に相談しましょう。
+          </p>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm p-4">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">仮面高血圧とは</h3>
+          <p class="text-xs text-gray-500 leading-relaxed">
+            病院での測定値は正常だが、家庭や職場での測定値が高いパターン。
+            見落とされやすいため注意が必要。
+            家庭での継続測定が早期発見に重要です。
+          </p>
+        </div>
+      </div>
+
+      <!-- 記録一覧 -->
+      <div class="bg-white rounded-2xl shadow-sm p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold text-gray-700">測定記録</h2>
+          <button onclick="exportCSV()" class="text-xs text-indigo-500 hover:text-indigo-700">CSVエクスポート</button>
+        </div>
+        <div id="records-list" class="space-y-2 max-h-64 overflow-y-auto"></div>
+        <p id="records-empty" class="text-center text-gray-400 text-sm py-4">まだ記録がありません</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'bp-tracker-v1';
+const TIME_LABELS = { morning:'朝', noon:'昼', evening:'晩' };
+const WHO = [
+  { label:'正常', sys:[0,120], dia:[0,80], bg:'#dcfce7' },
+  { label:'高め', sys:[120,130], dia:[80,85], bg:'#fef9c3' },
+  { label:'高血圧I度', sys:[130,160], dia:[85,100], bg:'#fee2e2' },
+  { label:'高血圧II度', sys:[160,999], dia:[100,999], bg:'#fecaca' },
+];
+
+function htmlEscape(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function getWHOClass(sys) {
+  if (sys < 120) return WHO[0];
+  if (sys < 130) return WHO[1];
+  if (sys < 160) return WHO[2];
+  return WHO[3];
+}
+
+function loadRecords() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
+}
+function saveRecords(r) { localStorage.setItem(STORAGE_KEY, JSON.stringify(r)); }
+
+function addRecord() {
+  const date = document.getElementById('bp-date').value;
+  const time = document.getElementById('bp-time').value;
+  const sys = parseInt(document.getElementById('bp-sys').value);
+  const dia = parseInt(document.getElementById('bp-dia').value);
+  const pulse = parseInt(document.getElementById('bp-pulse').value);
+
+  if (!date || isNaN(sys) || isNaN(dia)) { alert('日付・収縮期・拡張期は必須です'); return; }
+  if (sys < 60 || sys > 250 || dia < 40 || dia > 150) { alert('入力値が範囲外です'); return; }
+
+  const records = loadRecords();
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 90);
+  const filtered = records.filter(r => new Date(r.date) >= cutoff);
+  filtered.push({ id: Date.now(), date, time, sys, dia, pulse: isNaN(pulse) ? null : pulse });
+  filtered.sort((a,b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+  saveRecords(filtered);
+
+  const msg = document.getElementById('add-msg');
+  msg.classList.remove('hidden');
+  setTimeout(() => msg.classList.add('hidden'), 2000);
+
+  renderAll();
+}
+
+function deleteRecord(id) {
+  const records = loadRecords().filter(r => r.id !== id);
+  saveRecords(records);
+  renderAll();
+}
+
+function renderList(records) {
+  const list = document.getElementById('records-list');
+  const empty = document.getElementById('records-empty');
+  if (!records.length) { empty.classList.remove('hidden'); list.innerHTML = ''; return; }
+  empty.classList.add('hidden');
+  const recent = [...records].reverse().slice(0, 90);
+  list.innerHTML = recent.map(r => {
+    const cls = getWHOClass(r.sys);
+    return `<div class="flex items-center justify-between py-2 border-b border-gray-50 text-sm">
+      <div class="flex items-center gap-2">
+        <span class="inline-block w-2 h-2 rounded-full" style="background:${cls.bg.replace('c7','44')||'#ccc'}"></span>
+        <span class="font-mono text-gray-500 text-xs">${htmlEscape(r.date)}</span>
+        <span class="text-xs text-gray-400">${TIME_LABELS[r.time]||''}</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="font-semibold text-red-600">${r.sys}</span>
+        <span class="text-gray-400">/</span>
+        <span class="font-semibold text-blue-500">${r.dia}</span>
+        <span class="text-xs text-gray-400">mmHg</span>
+        ${r.pulse ? `<span class="text-xs text-gray-400">♥${r.pulse}</span>` : ''}
+        <span class="text-xs px-1.5 py-0.5 rounded" style="background:${cls.bg}">${cls.label}</span>
+        <button onclick="deleteRecord(${r.id})" class="text-gray-300 hover:text-red-400 text-xs" aria-label="削除">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderStats(records) {
+  const panel = document.getElementById('stats-panel');
+  if (!records.length) { panel.innerHTML = '<span class="text-gray-400 text-xs">データなし</span>'; return; }
+  const sysList = records.map(r => r.sys);
+  const diaList = records.map(r => r.dia);
+  const avg = arr => arr.reduce((a,b) => a+b, 0) / arr.length;
+  const cv = arr => { const m = avg(arr); return (Math.sqrt(arr.map(x=>(x-m)**2).reduce((a,b)=>a+b,0)/arr.length)/m*100).toFixed(1); };
+  const sysAvg = avg(sysList).toFixed(1), diaAvg = avg(diaList).toFixed(1);
+  panel.innerHTML = `
+    <div class="space-y-2 text-left">
+      <div class="flex justify-between"><span class="text-gray-500">収縮期 平均</span><span class="font-semibold text-red-600">${sysAvg} mmHg</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">拡張期 平均</span><span class="font-semibold text-blue-500">${diaAvg} mmHg</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">収縮期 最大</span><span class="font-mono text-xs">${Math.max(...sysList)}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">収縮期 最小</span><span class="font-mono text-xs">${Math.min(...sysList)}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">変動係数（CV）</span><span class="font-mono text-xs">${cv(sysList)}%</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">記録件数</span><span class="font-mono text-xs">${records.length}件</span></div>
+    </div>
+  `;
+}
+
+function drawChart(records) {
+  const canvas = document.getElementById('bp-chart');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const pad = { top: 15, right: 15, bottom: 40, left: 45 };
+  ctx.clearRect(0, 0, W, H);
+
+  const plotW = W - pad.left - pad.right;
+  const plotH = H - pad.top - pad.bottom;
+
+  // WHO 背景帯 (Y軸: 60-200)
+  const minY = 60, maxY = 200;
+  const zones = [
+    { from: 60, to: 120, color: '#dcfce7' },
+    { from: 120, to: 130, color: '#fef9c3' },
+    { from: 130, to: 160, color: '#fee2e2' },
+    { from: 160, to: 200, color: '#fecaca' },
+  ];
+  zones.forEach(z => {
+    const y1 = pad.top + plotH * (1 - (z.to - minY) / (maxY - minY));
+    const y2 = pad.top + plotH * (1 - (z.from - minY) / (maxY - minY));
+    ctx.fillStyle = z.color;
+    ctx.fillRect(pad.left, y1, plotW, y2 - y1);
+  });
+
+  // Grid lines
+  ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1;
+  [80, 100, 120, 130, 140, 160, 180].forEach(v => {
+    const y = pad.top + plotH * (1 - (v - minY) / (maxY - minY));
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+    ctx.fillStyle = '#6b7280'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+    ctx.fillText(v, pad.left - 4, y + 3);
+  });
+
+  if (!records.length) return;
+
+  const n = records.length;
+  const pts = records.map((r, i) => ({
+    x: pad.left + (n === 1 ? plotW / 2 : i * plotW / (n - 1)),
+    ys: pad.top + plotH * (1 - (r.sys - minY) / (maxY - minY)),
+    yd: pad.top + plotH * (1 - (r.dia - minY) / (maxY - minY)),
+  }));
+
+  // 収縮期ライン
+  ctx.beginPath(); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2;
+  pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.ys) : ctx.lineTo(p.x, p.ys));
+  ctx.stroke();
+  pts.forEach(p => { ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(p.x,p.ys,3,0,Math.PI*2); ctx.fill(); });
+
+  // 拡張期ライン
+  ctx.beginPath(); ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 2;
+  pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.yd) : ctx.lineTo(p.x, p.yd));
+  ctx.stroke();
+  pts.forEach(p => { ctx.fillStyle='#60a5fa'; ctx.beginPath(); ctx.arc(p.x,p.yd,3,0,Math.PI*2); ctx.fill(); });
+
+  // X軸ラベル
+  const step = Math.ceil(n / 7);
+  ctx.fillStyle = '#9ca3af'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+  records.forEach((r, i) => {
+    if (i % step === 0 || i === n - 1) {
+      ctx.fillText(r.date.slice(5), pts[i].x, H - 8);
+    }
+  });
+}
+
+function exportCSV() {
+  const records = loadRecords();
+  if (!records.length) { alert('データがありません'); return; }
+  let csv = '日付,時間帯,収縮期(mmHg),拡張期(mmHg),脈拍(bpm),分類\n';
+  records.forEach(r => {
+    csv += `${r.date},${TIME_LABELS[r.time]||r.time},${r.sys},${r.dia},${r.pulse||''},${getWHOClass(r.sys).label}\n`;
+  });
+  const blob = new Blob(['﻿'+csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `blood-pressure-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+function renderAll() {
+  const records = loadRecords();
+  renderList(records);
+  renderStats(records);
+  drawChart(records);
+}
+
+// 初期化
+document.getElementById('bp-date').value = new Date().toISOString().slice(0,10);
+renderAll();
+</script>
+</body>
+</html>
